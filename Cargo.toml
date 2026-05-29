@@ -6,3 +6,9 @@ members = ["app"]
 gstd = { version = "1.4.2" }
 sails-rs = { git = "https://github.com/gear-tech/sails.git", tag = "v0.2.0" }
 sails-idl-gen = { git = "https://github.com/gear-tech/sails.git", tag = "v0.2.0" }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
