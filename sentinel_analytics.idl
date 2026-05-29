@@ -1,0 +1,3 @@
+constructor {
+  Init : (oracle: actor_id);
+};
