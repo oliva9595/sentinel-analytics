@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["app"]
+
+[workspace.dependencies]
+gstd = { version = "1.4.2" }
+sails-rs = { git = "https://github.com/gear-tech/sails.git", tag = "v0.2.0" }
+sails-idl-gen = { git = "https://github.com/gear-tech/sails.git", tag = "v0.2.0" }
