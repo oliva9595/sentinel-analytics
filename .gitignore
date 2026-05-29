@@ -1,3 +1,4 @@
 /target/
 /Cargo.lock
 /bot/node_modules/
+push_to_github.bat
