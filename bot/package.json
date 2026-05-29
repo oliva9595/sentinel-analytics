@@ -1,0 +1,12 @@
+{
+  "name": "sentinel-analytics-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "@polkadot/api": "^10.12.1",
+    "@gear-js/api": "^0.3.4",
+    "graphql-request": "^6.1.0",
+    "graphql": "^16.8.1",
+    "dotenv": "^16.4.5"
+  }
+}
