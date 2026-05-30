@@ -1,0 +1,10 @@
+constructor {
+  New : (oracle: actor_id);
+};
+
+service Analytics {
+  SubmitAnalyticsReport : (report_hash: str) -> bool;
+  UpdateCreditRatings : (ratings: vec struct { actor_id, u16 }) -> bool;
+  query GetCreditRating : (agent: actor_id) -> u16;
+  query GetSubmittedReports : () -> vec str;
+};

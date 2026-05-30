@@ -8,7 +8,7 @@ pub struct AnalyticsProgram;
 
 #[sails_rs::program]
 impl AnalyticsProgram {
-    pub fn init(oracle: ActorId) -> Self {
+    pub fn new(oracle: ActorId) -> Self {
         AnalyticsService::init(oracle);
         Self
     }

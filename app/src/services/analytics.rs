@@ -15,7 +15,6 @@ static mut STATE: Option<AnalyticsState> = None;
 
 pub struct AnalyticsService;
 
-#[sails_rs::service]
 impl AnalyticsService {
     pub fn init(oracle: ActorId) {
         unsafe {
@@ -30,8 +29,11 @@ impl AnalyticsService {
     pub fn new() -> Self {
         Self
     }
+}
 
-    // Methods
+#[sails_rs::service]
+impl AnalyticsService {
+    #[export]
     pub fn update_credit_ratings(&mut self, ratings: Vec<(ActorId, u16)>) -> bool {
         let state = unsafe { STATE.as_mut().expect("State not initialized") };
         assert_eq!(msg::source(), state.oracle_address, "Only oracle can update ratings");
@@ -43,6 +45,7 @@ impl AnalyticsService {
         true
     }
 
+    #[export]
     pub fn submit_analytics_report(&mut self, report_hash: String) -> bool {
         let state = unsafe { STATE.as_mut().expect("State not initialized") };
         assert_eq!(msg::source(), state.oracle_address, "Only oracle can submit report hashes");
@@ -50,12 +53,13 @@ impl AnalyticsService {
         true
     }
 
-    // Queries
+    #[export]
     pub fn get_credit_rating(&self, agent: ActorId) -> u16 {
         let state = unsafe { STATE.as_ref().expect("State not initialized") };
         *state.credit_ratings.get(&agent).unwrap_or(&500) // Default score is 500
     }
 
+    #[export]
     pub fn get_submitted_reports(&self) -> Vec<String> {
         let state = unsafe { STATE.as_ref().expect("State not initialized") };
         state.submitted_reports.clone()
