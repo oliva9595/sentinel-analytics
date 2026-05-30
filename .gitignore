@@ -2,4 +2,5 @@
 /Cargo.lock
 /bot/node_modules/
 /bot/*.log
+/bot/.agent-activity-*.json
 push_to_github.bat

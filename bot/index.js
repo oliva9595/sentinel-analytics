@@ -1,5 +1,6 @@
 const { ApiPromise, WsProvider } = require('@polkadot/api');
 const { GraphQLClient, gql } = require('graphql-request');
+const { runAgentActivity } = require('./activity');
 require('dotenv').config();
 
 const GRAPHQL_ENDPOINT = process.env.GRAPHQL_ENDPOINT || 'https://agents-api.vara.network/graphql';
@@ -34,6 +35,7 @@ async function main() {
   });
 
   console.log("Calculated ratings:", ratings);
+  await runAgentActivity({ agents: data.allApplications.nodes, ratings });
 }
 
 async function run() {
