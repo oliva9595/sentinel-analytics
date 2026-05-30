@@ -8,6 +8,7 @@ const execFileAsync = promisify(execFile);
 const NETWORK_PID = '0x19f27f4c906a5ac230be82d907850d44c7a7fff1b4c6903f62e78e09e0b353f3';
 const NETWORK_IDL = 'C:\\Users\\XuanCanh\\.agents\\skills\\vara-agent-network-skills\\idl\\agents_network_client.idl';
 const WALLET_DIR = 'C:\\Users\\XuanCanh\\.vara-wallet';
+const GRAPHQL_ENDPOINT = process.env.GRAPHQL_ENDPOINT || 'https://agents-api.vara.network/graphql';
 
 const CONFIG = {
   name: 'Sentinel Analytics',
@@ -60,6 +61,74 @@ async function callNetwork(method, args, extra = []) {
   return stdout.trim();
 }
 
+async function graphql(query, variables) {
+  const response = await fetch(GRAPHQL_ENDPOINT, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
+  });
+  const payload = await response.json();
+  if (payload.errors) {
+    throw new Error(JSON.stringify(payload.errors));
+  }
+  return payload.data;
+}
+
+function handleRefFromAuthorRef(authorRef) {
+  if (!authorRef || !authorRef.includes(':')) {
+    return null;
+  }
+  const [kind, value] = authorRef.split(':');
+  if (kind === 'Application') return { Application: value };
+  if (kind === 'Participant') return { Participant: value };
+  return null;
+}
+
+async function replyToMentions(state) {
+  const recipient = `Application:${CONFIG.appHex}`;
+  const data = await graphql(`
+    query Mentions($recipient: String!) {
+      allChatMentions(first: 25, orderBy: SUBSTRATE_BLOCK_NUMBER_DESC, condition: { recipientRef: $recipient }) {
+        nodes {
+          chatMessageByMessageId {
+            msgId
+            authorRef
+            authorHandle
+            replyTo
+          }
+        }
+      }
+    }
+  `, { recipient });
+
+  const mentions = data.allChatMentions.nodes
+    .map((node) => node.chatMessageByMessageId)
+    .filter(Boolean)
+    .sort((a, b) => Number(a.msgId) - Number(b.msgId));
+
+  for (const message of mentions) {
+    const msgId = Number(message.msgId);
+    if (state.lastMentionMsgId && msgId <= state.lastMentionMsgId) continue;
+    if (message.replyTo !== null && message.replyTo !== undefined) {
+      state.lastMentionMsgId = msgId;
+      continue;
+    }
+    if (message.authorRef === recipient) {
+      state.lastMentionMsgId = msgId;
+      continue;
+    }
+
+    const mention = handleRefFromAuthorRef(message.authorRef);
+    const body = `Sentinel received @${message.authorHandle || 'agent'} and can review counterparty risk, evidence, and Trust Suite activity before settlement.`;
+    await callNetwork('Chat/Post', [body, { Application: CONFIG.appHex }, mention ? [mention] : [], msgId]);
+    state.lastMentionMsgId = msgId;
+    state.lastChatAt = Date.now();
+    await writeState(state);
+    console.log('Sentinel replied to mention:', msgId);
+    break;
+  }
+}
+
 function pickMentionTarget(agents) {
   const candidate = agents.find((agent) =>
     agent.owner !== CONFIG.appHex &&
@@ -110,6 +179,12 @@ async function runAgentActivity({ agents, ratings }) {
   const current = now();
   const chatIntervalMs = Number(process.env.CHAT_INTERVAL_MS || 30 * 60 * 1000);
   const boardIntervalMs = Number(process.env.BOARD_INTERVAL_MS || 4 * 60 * 60 * 1000);
+
+  try {
+    await replyToMentions(state);
+  } catch (error) {
+    console.error('Sentinel mention reply failed:', error.message || error);
+  }
 
   if (!state.lastChatAt || current - state.lastChatAt >= chatIntervalMs) {
     try {
