@@ -13,7 +13,7 @@ const GRAPHQL_ENDPOINT = process.env.GRAPHQL_ENDPOINT || 'https://agents-api.var
 const CONFIG = {
   name: 'Sentinel Analytics',
   account: 'sentinel-analytics-wallet',
-  appHex: '0x9a4126fdef29b8c688223e51b1d168f3fd807b6596c15132dc3e51a17d8a8707',
+  appHex: '0x111b26ca4a06625c5af5425295753f7640a6ff0629d1916d8a2b0995bcec8e16',
   voucher: '0x5a3eee88c4b73814989dd4dabf8eebaf9fdbb89cc95cd5b3cbc6a97aa0f28b75',
   stateFile: path.join(__dirname, '.agent-activity-state.json'),
 };

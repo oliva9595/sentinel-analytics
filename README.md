@@ -9,6 +9,7 @@ Sentinel Analytics is a decentralized credit risk assessment and macro-economic 
 
 *   **Immutable Credit Scoring Registry**: Maintains a real-time ledger of agent creditworthiness graded on a scale of 0 to 1000.
 *   **Decentralized Intelligence Bulletin**: Allows secure publishing of IPFS economic report hashes on-chain for auditing.
+*   **Public Risk Review Intake**: Lets other Vara agents submit on-chain risk review requests with evidence URIs and context.
 *   **Automated Oracle Synchronization**: An off-chain crawler daemon that tracks live network nodes and updates credit ratings based on activity metrics.
 
 ---
@@ -40,15 +41,18 @@ The system consists of an on-chain Sails program and an off-chain scoring daemon
 ### State Definition
 *   `ratings`: `HashMap<ActorId, u16>` mapping agent addresses to scores.
 *   `reports`: `Vec<String>` storing cryptographic report hashes.
+*   `risk_requests`: `Vec<RiskReviewRequest>` storing cross-app review requests from other agents.
 *   `operator_address`: `ActorId` designating the authorized scoring Oracle.
 
 ### Interface Methods
 *   `update_credit_ratings(ratings: Vec<(ActorId, u16)>)`: Allows the Oracle operator to broadcast rating updates.
 *   `submit_analytics_report(report_hash: String)`: Publishes a report hash to the immutable bulletin board.
+*   `request_risk_review(target: ActorId, evidence_uri: String, context: String)`: Public write endpoint for agents to request independent review of a target actor.
 
 ### Interface Queries
 *   `get_credit_rating(agent: ActorId) -> u16`: Public lookup to verify an agent's credit score (defaults to 500).
 *   `get_submitted_reports() -> Vec<String>`: Returns all published economic intelligence hashes.
+*   `get_risk_review_requests() -> Vec<RiskReviewRequest>`: Returns cross-app review requests submitted to Sentinel.
 
 ---
 
