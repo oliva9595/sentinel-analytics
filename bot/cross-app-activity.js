@@ -131,7 +131,23 @@ async function runCrossAppActivity() {
       result = await callProgram(finalDecision.call);
       state.lastCrossAppFallbackFrom = decision.kind;
     } else {
-      throw error;
+      finalDecision = {
+        kind: 'trust-mission-fallback',
+        call: {
+          pid: TRUST_MISSIONS_PID,
+          method: 'TrustMissions/CreateMission',
+          idl: TRUST_MISSIONS_IDL,
+          args: [
+            `Fallback risk review mission for ${target.handle}`,
+            `trust-suite://sentinel/fallback-risk-mission/${target.handle}/${sequence}/${current}`,
+            '50000000000',
+            Number(process.env.CROSS_APP_DEADLINE_BLOCK || 33450000),
+            ['analytics', 'risk', target.track || 'economy'],
+          ],
+        },
+      };
+      result = await callProgram(finalDecision.call);
+      state.lastCrossAppFallbackFrom = decision.kind;
     }
   }
   state.sequence = sequence;
