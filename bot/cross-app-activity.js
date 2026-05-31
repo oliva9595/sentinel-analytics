@@ -14,7 +14,10 @@ const TRUST_MISSIONS_IDL = 'D:\\vara2\\agent_args\\trust_missions.idl';
 const TRUST_MARKETPLACE_IDL = 'D:\\vara2\\agent_args\\trust_marketplace.idl';
 const TRUST_LAYER_OWNER = '0xa223c6a7e56cd7cfc6d62ea60d3d17dfee700e62658018ddcadc7ebd5976b62d';
 const ZENITH_OPERATOR = '0xde61698e954f124dd89ad6732fa68f922e5efc892086a5ebdcc3621b18eb2556';
+const SENTINEL_OPERATOR = '0x44e35db8ad4cf866fcd43ed79cc90929ecb982992cc7f023a54b33a9e8c10e02';
 const WALLET_DIR = 'C:\\Users\\XuanCanh\\.vara-wallet';
+const CROSS_APP_REWARD_RAW = process.env.CROSS_APP_REWARD_RAW || '50000000000';
+const CROSS_APP_REWARD_VALUE = process.env.CROSS_APP_REWARD_VALUE || '0.05';
 
 const CONFIG = {
   account: 'sentinel-analytics-wallet',
@@ -41,6 +44,17 @@ async function graphql(query) {
 
 function num(value) { return Number(value || 0); }
 
+async function deadlineBlock() {
+  if (process.env.CROSS_APP_DEADLINE_BLOCK) return Number(process.env.CROSS_APP_DEADLINE_BLOCK);
+  const { stdout } = await execFileAsync('cmd.exe', ['/c', 'vara-wallet.cmd', '--network', 'mainnet', 'query', 'system', 'number'], {
+    env: { ...process.env, VARA_WALLET_DIR: WALLET_DIR },
+    windowsHide: true,
+    maxBuffer: 1024 * 1024,
+  });
+  const currentBlock = Number(JSON.parse(stdout).result || 0);
+  return currentBlock + Number(process.env.CROSS_APP_DEADLINE_BLOCKS || 43200);
+}
+
 async function loadLiveContext() {
   const data = await graphql(`
     {
@@ -54,6 +68,15 @@ async function loadLiveContext() {
   `);
   const metrics = new Map(data.allAppMetrics.nodes.map((metric) => [metric.applicationId, metric]));
   return { apps: data.allApplications.nodes.filter((app) => app.status === 'Submitted' && app.handle !== CONFIG.handle).map((app) => ({ ...app, metric: metrics.get(app.id) || {} })) };
+}
+
+async function loadMissions() {
+  const { stdout } = await execFileAsync('cmd.exe', ['/c', 'vara-wallet.cmd', '--network', 'mainnet', '--account', CONFIG.account, 'call', TRUST_MISSIONS_PID, 'TrustMissions/ListMissions', '--idl', TRUST_MISSIONS_IDL], {
+    env: { ...process.env, VARA_WALLET_DIR: WALLET_DIR },
+    windowsHide: true,
+    maxBuffer: 1024 * 1024,
+  });
+  return JSON.parse(stdout).result || [];
 }
 
 function chooseTarget(apps, state, current) {
@@ -88,23 +111,32 @@ async function ensureMarketplaceProvider(state) {
   console.log('Sentinel registered on Trust Marketplace:', result);
 }
 
-function chooseAction(target, sequence, current) {
+function chooseMissionId(missions, sequence) {
+  const candidates = missions.filter((mission) => {
+    const applicants = mission.applicants || [];
+    return mission.status?.kind === 'Open' && mission.creator !== SENTINEL_OPERATOR && !applicants.includes(SENTINEL_OPERATOR);
+  });
+  const pool = candidates.length ? candidates : missions.filter((mission) => mission.status?.kind === 'Open' && mission.creator !== SENTINEL_OPERATOR);
+  return Number(pool[sequence % Math.max(1, pool.length)]?.id ?? 0);
+}
+
+function chooseAction(target, sequence, current, deadline, missions) {
   const metric = target.metric || {};
   if (!target.identityCardUpdatedAt || num(metric.uniquePartners) < 2) {
     return {
-      kind: 'trust-mission',
-      call: { pid: TRUST_MISSIONS_PID, method: 'TrustMissions/CreateMission', idl: TRUST_MISSIONS_IDL, args: [`Risk review mission for ${target.handle}`, `trust-suite://sentinel/live-risk-mission/${target.handle}/${sequence}/${current}`, '50000000000', Number(process.env.CROSS_APP_DEADLINE_BLOCK || 33450000), ['analytics', 'risk', target.track || 'economy']] },
+      kind: 'trust-mission-apply',
+      call: { pid: TRUST_MISSIONS_PID, method: 'TrustMissions/ApplyToMission', idl: TRUST_MISSIONS_IDL, args: [chooseMissionId(missions, sequence)] },
     };
   }
   if (num(metric.integrationsIn) > 3 && num(metric.uniquePartners) > 2) {
     return {
       kind: 'trust-layer-escrow',
-      call: { pid: TRUST_LAYER_PID, method: 'AgentTrustLayer/CreateEscrow', idl: TRUST_LAYER_IDL, value: process.env.CROSS_APP_ESCROW_VALUE || '0.05', args: [TRUST_LAYER_OWNER, ZENITH_OPERATOR, `mainnet:${CONFIG.role}:live:${target.handle}:risk-review-escrow:${sequence}:${current}`, Number(process.env.CROSS_APP_DEADLINE_BLOCK || 33450000)] },
+      call: { pid: TRUST_LAYER_PID, method: 'AgentTrustLayer/CreateEscrow', idl: TRUST_LAYER_IDL, value: process.env.CROSS_APP_ESCROW_VALUE || '0.05', args: [TRUST_LAYER_OWNER, ZENITH_OPERATOR, `mainnet:${CONFIG.role}:live:${target.handle}:risk-review-escrow:${sequence}:${current}`, deadline] },
     };
   }
   return {
-    kind: 'trust-marketplace-hire',
-    call: { pid: TRUST_MARKETPLACE_PID, method: 'TrustMarketplace/CreateHireIntent', idl: TRUST_MARKETPLACE_IDL, args: [TRUST_LAYER_OWNER, `trust-suite://sentinel/live-risk-hire/${target.handle}/${sequence}/${current}`, '50000000000', Number(process.env.CROSS_APP_DEADLINE_BLOCK || 33450000)] },
+    kind: 'trust-mission-apply',
+    call: { pid: TRUST_MISSIONS_PID, method: 'TrustMissions/ApplyToMission', idl: TRUST_MISSIONS_IDL, args: [chooseMissionId(missions, sequence)] },
   };
 }
 
@@ -116,38 +148,31 @@ async function runCrossAppActivity() {
   const current = Date.now();
   const intervalMs = Number(process.env.CROSS_APP_INTERVAL_MS || 6 * 60 * 60 * 1000);
   if (state.lastCrossAppAt && current - state.lastCrossAppAt < intervalMs) return;
-  const { apps } = await loadLiveContext();
+  const [{ apps }, missions] = await Promise.all([loadLiveContext(), loadMissions()]);
   const target = chooseTarget(apps, state, current);
   if (!target) return;
   const sequence = Number(state.sequence || 0) + 1;
-  const decision = chooseAction(target, sequence, current);
+  const deadline = await deadlineBlock();
+  const decision = chooseAction(target, sequence, current, deadline, missions);
   let finalDecision = decision;
   let result;
   try {
     result = await callProgram(decision.call);
   } catch (error) {
-    if (decision.kind !== 'trust-marketplace-hire') {
-      finalDecision = { kind: 'trust-marketplace-hire', call: { pid: TRUST_MARKETPLACE_PID, method: 'TrustMarketplace/CreateHireIntent', idl: TRUST_MARKETPLACE_IDL, args: [TRUST_LAYER_OWNER, `trust-suite://sentinel/fallback-hire/${target.handle}/${sequence}/${current}`, '50000000000', Number(process.env.CROSS_APP_DEADLINE_BLOCK || 33450000)] } };
-      result = await callProgram(finalDecision.call);
-      state.lastCrossAppFallbackFrom = decision.kind;
-    } else {
+    if (decision.kind !== 'trust-mission-apply') {
       finalDecision = {
-        kind: 'trust-mission-fallback',
+        kind: 'trust-mission-apply-fallback',
         call: {
           pid: TRUST_MISSIONS_PID,
-          method: 'TrustMissions/CreateMission',
+          method: 'TrustMissions/ApplyToMission',
           idl: TRUST_MISSIONS_IDL,
-          args: [
-            `Fallback risk review mission for ${target.handle}`,
-            `trust-suite://sentinel/fallback-risk-mission/${target.handle}/${sequence}/${current}`,
-            '50000000000',
-            Number(process.env.CROSS_APP_DEADLINE_BLOCK || 33450000),
-            ['analytics', 'risk', target.track || 'economy'],
-          ],
+          args: [chooseMissionId(missions, sequence + 1)],
         },
       };
       result = await callProgram(finalDecision.call);
       state.lastCrossAppFallbackFrom = decision.kind;
+    } else {
+      throw error;
     }
   }
   state.sequence = sequence;
